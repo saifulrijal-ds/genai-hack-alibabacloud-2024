@@ -7,6 +7,8 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
 # Set up memory
 msgs = StreamlitChatMessageHistory(key="langchain_messages")
 if len(msgs.messages) == 0:
@@ -16,7 +18,7 @@ if len(msgs.messages) == 0:
 chat_tongyi = ChatTongyi(
     model="qwen2-72b-instruct",
     streaming=True,
-    api_key=os.getenv("DASHSCOPE_API_KEY")
+    api_key=os.getenv("DASHSCOPE_API_KEY"),
 )
 
 system_template = """You are SAUNG, an AI assistant for West Java. Follow these rules:
