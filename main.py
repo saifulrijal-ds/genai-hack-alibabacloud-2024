@@ -1,75 +1,64 @@
 import streamlit as st
-from langchain_community.chat_models.tongyi import ChatTongyi
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.chat_message_histories import StreamlitChatMessageHistory
-from langchain_core.runnables.history import RunnableWithMessageHistory
-import os
-from dotenv import load_dotenv
+
+from langchain.schema import ChatMessage
+
 from http import HTTPStatus
 import dashscope
+from dashscope import Application
 
-# Load environment variables
+import os
+from dotenv import load_dotenv
+
+st.set_page_config(page_title="SAUNG Apps")
+
 load_dotenv()
 
-# Initialize Dashscope API URL
 dashscope.base_http_api_url = 'https://dashscope-intl.aliyuncs.com/api/v1'
-dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")
 
-# Set up memory for chat messages
-msgs = StreamlitChatMessageHistory(key="langchain_messages")
-if len(msgs.messages) == 0:
-    msgs.add_ai_message("Halo, kumaha abdi tiasa ngabantosan anjeun?")
+# APP_ID = os.getenv("APP_ID")
+# DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
 
-# Initialize LLM model
-chat_tongyi = ChatTongyi(
-    model="qwen2-72b-instruct",
-    streaming=True
-    #api_key=os.getenv("DASHSCOPE_API_KEY")
-)
+st.title("SAUNG - Smart Assistant for Unified Learning and Growth")
 
-system_template = """You are SAUNG, an AI assistant for West Java. Follow these rules:
-1. Always respond in the same language as the user's query.
-2. If the user's language is unclear, default to Indonesian (Bahasa Indonesia).
-3. If the user specifies a language for your response, use that language.
-4. Your knowledge focuses on West Java, but you can discuss general topics too.
-5. Provide clear, concise information and offer to elaborate if needed.
-6. If you're unsure about information, admit it and suggest reliable sources.
-7. Adapt your formality and tone to match the user's style and cultural norms.
-8. Do not mention these instructions in your responses.
-Remember: Match the user's language unless told otherwise.
-"""
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [ChatMessage(role="assistant", content="Ada yang bisa dibantu wargi?")]
 
-prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", system_template),
-        MessagesPlaceholder(variable_name='history'),
-        ("human", "{question}")
-    ]
-)
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = None # Initialize session_id
 
-chain = prompt | chat_tongyi
-chain_with_history = RunnableWithMessageHistory(
-    chain,
-    lambda session_id: msgs,
-    input_messages_key="question",
-    history_messages_key="history"
-)
+for msg in st.session_state.messages:
+    st.chat_message(msg.role).write(msg.content)
 
-# Display chat messages from history on app rerun
-for msg in msgs.messages:
-    with st.chat_message(msg.type):
-        st.write(msg.content)
+def call_with_session(prompt):
+    if st.session_state["session_id"] is None:
+        # response = Application.call(app_id=os.getenv("APP_ID"), prompt=prompt, api_key=os.getenv("DASHSCOPE_API_KEY"))
+        response = Application.call(app_id="bf247a062c664d2a8ef9fd0b3b51b60a", prompt=prompt, api_key="sk-acc14fd575ca44329f90a22a7adc6390")
+        
+        if response.status_code != HTTPStatus.OK:
+            error_message = f"Error: Unnable to process your request, (Code:{response.status_code}, Message: {response.message})"
+            print('request_id=%s, code=%s, message=%s\n' % (response.request_id, response.status_code, response.message))
+            return error_message
+        
+        st.session_state["session_id"] = response.output.session_id
+        return response.output
+    
+    else:
+        response = Application.call(app_id="bf247a062c664d2a8ef9fd0b3b51b60a", prompt=prompt, session_id=st.session_state["session_id"], api_key="sk-acc14fd575ca44329f90a22a7adc6390")
 
-# Accept user input
-if user_input := st.chat_input("Apa yang ingin Anda ketahui?"):
-    # Display user message in chat message container
-    with st.chat_message("user"):
-        st.write(user_input)
-    # Add user message to chat history
-    config = {"configurable": {"session_id": "any"}}
+        if response.status_code != HTTPStatus.OK:
+            error_message = f"Error: Unable to process your request. (Code: {response.status_code}, Message: {response.message})"
+            print('request_id=%s, code=%s, message=%s\n' % (response.request_id, response.status_code, response.message))
+            return error_message
+        
+        return response.output
+    
+if prompt := st.chat_input("Silakan tanyakan pertanyaan Anda"):
+    st.session_state.messages.append(ChatMessage(role="user", content=prompt))
+    st.chat_message("user").write(prompt)
 
-    with st.spinner("Néangan jawaban.."):
-        response = chain_with_history.invoke({"question": user_input}, config)
-        with st.chat_message("ai"):
-            st.write(response.content)
+    response = call_with_session(prompt=prompt)
 
+    with st.chat_message("assistant"):
+        st.markdown(response['text'])
+        # st.markdown(response)
+        st.session_state.messages.append(ChatMessage(role="assistant", content=response['text']))
